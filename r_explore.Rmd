@@ -1,13 +1,19 @@
-## Load library
-library(tidyverse)
+---
+title: "Exploring TCGA"
+output: html_notebook
+---
 
+## Define where the data lives
+```{r}
 ## Define data paths
 in_path_varscan = 'data/maf/6c93f518-1956-4435-9806-37185266d248/TCGA.BRCA.varscan.6c93f518-1956-4435-9806-37185266d248.DR-10.0.somatic.maf.gz'
 in_path_muse = 'data/maf/b8ca5856-9819-459c-87c5-94e91aca4032/TCGA.BRCA.muse.b8ca5856-9819-459c-87c5-94e91aca4032.DR-10.0.somatic.maf.gz'
 in_path_ss = 'data/maf/7dd592e3-5950-4438-96d5-3c718aca3f13/TCGA.BRCA.somaticsniper.7dd592e3-5950-4438-96d5-3c718aca3f13.DR-10.0.somatic.maf.gz'
 in_path_mutect = 'data/maf/995c0111-d90b-4140-bee7-3845436c3b42/TCGA.BRCA.mutect.995c0111-d90b-4140-bee7-3845436c3b42.DR-10.0.somatic.maf.gz'
+```
 
-
+## Read multiple data frames and concatenate
+```{r}
 ## Define column types
 col_types = cols_only(
   Chromosome = 'c',
@@ -35,7 +41,10 @@ df = bind_rows(lapply(
   col_types = col_types,
   comment = '#'
 ))
+```
 
+## Rename columns
+```{r}
 ## Rename
 col_name_map = list(
   CHR = 'Chromosome',
@@ -50,7 +59,10 @@ col_name_map = list(
   BARCODE = 'Tumor_Sample_Barcode'
 )
 df = rename(df, !!! col_name_map)
+```
 
+## Add new columns based on string operations
+```{r}
 ## Make new colums
 df$MUTATION = paste(
   df$CHR, 
@@ -62,10 +74,17 @@ df$MUTATION = paste(
   sep = ':'
 )
 df$SAMPLE = str_sub(df$BARCODE, 1, 12)
+```
 
 ## Remove duplicates
+```{r}
+## Remove duplicates
 df = unique(df)
+```
 
+
+## Counts by group
+```{r}
 ## Summary
 df_summary = df %>%
   group_by(GENE) %>%
@@ -74,3 +93,47 @@ df_summary = df %>%
     N_UNIQUE_MUTATIONS = length(unique(MUTATION)),
     SAMPLES = length(unique(BARCODE))
 )
+```
+
+## Sort by columns
+```{r}
+df_summary = df_summary %>%
+  arrange(desc(SAMPLES), N_MUTATIONS)
+```
+
+## Preview data
+```{r}
+head(df_summary, 10)
+```
+
+## Group by multiple categories
+```{r}
+df_impact = df %>%
+  group_by(GENE, IMPACT) %>%
+  summarise(COUNT = length(unique(MUTATION)))
+```
+
+## Plot with multiple groupings
+```{r}
+## Filter to plotting data
+genes = df_summary$GENE[1:10]
+df_plt = df_impact %>%
+  filter(GENE %in% genes)
+
+## Reorder for plot
+df_plt$GENE = factor(df_plt$GENE, levels = genes)
+
+p = ggplot(data = df_plt) +
+  geom_bar(
+    aes(x=GENE, y=COUNT, fill=IMPACT),
+    stat = 'identity',
+    position = 'dodge'
+  ) +
+  scale_fill_brewer(
+    type='qual',
+    palette = 'Set1'
+  )
+p
+```
+
+
