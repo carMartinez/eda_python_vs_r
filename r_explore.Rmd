@@ -6,6 +6,7 @@ output: html_notebook
 ## Load dependencies
 ```{r}
 library(tidyverse)
+library(cowplot)
 ```
 
 # 1 Reading & Cleaning
@@ -65,6 +66,18 @@ df = bind_rows(lapply(
   comment = '#'
 ))
 
+## Convert characters to factors
+# Note, if we weren't concatenating,
+# this could be done while reading 
+# by specifying 
+# `COL_NAME = col_factor(levels=NULL)`
+# inside cols_only()
+df = mutate_if(
+  df,
+  is.character,
+  as.factor
+)
+
 print(dim(df))
 head(df)
 ```
@@ -95,6 +108,7 @@ head(df)
 
 ## Fill missing data
 ```{r}
+levels(df$GENE) = c(levels(df$GENE), 'INTERGENIC')
 df$GENE[is.na(df$GENE)] = 'INTERGENIC'
 ```
 
@@ -110,6 +124,10 @@ df$MUTATION = paste(
   df$ALT,
   sep = ':'
 )
+
+## Convert new columns to factors if applicable
+df$SAMPLE = as.factor(df$SAMPLE)
+df$MUTATION = as.factor(df$MUTATION)
 ```
 
 ## Remove duplicates
@@ -137,7 +155,7 @@ head(df_mut)
 ## Writing files
 ```{r}
 write_delim(
-  df_mut, 
+  df, 
   'data/out/df_r.tsv', 
   delim = '\t'
 )
@@ -150,44 +168,133 @@ write_delim(
 rds_path = 'data/out/df.rds'
 
 ## Write
-saveRDS(df_mut, rds_path)
+saveRDS(df, rds_path)
 
 ## Read
 df = readRDS(rds_path)
 ```
 
-
 ## Long to wide
 ```{r}
+
+## Shorten to relevant columns
+# Note, we could include other columns here
+# like GENE and IMPACT, but we won't 
+# to match the python example.
+df_tmp = select(df, c('SAMPLE', 'MUTATION'))
+df_tmp$EXISTS = 1
+
+df_wide = spread(
+  df_tmp,
+  key = 'SAMPLE',
+  value = 'EXISTS',
+  fill = 0
+)
+
+rm(df_tmp)
+
+print(dim(df_wide))
+head(df_wide)
 
 ```
 
 ## Add info from 1 df to another (merge)
 ```{r}
 
+## Select columns to add on and col to join on
+cols = c('MUTATION', 'GENE', 'IMPACT')
+
+## Merge
+df_wide = merge(
+  df_wide, select(df_mut, cols),
+  by = 'MUTATION',
+  all.x = TRUE
+)
+
+## Re-order columns
+# Put new columns first
+df_wide = select(df_wide, cols, everything())
+
+# Note, first 3 columns are out of order 
+# w/ python example.
+print(dim(df_wide))
+head(df_wide)
 ```
 
 ## Wide to long
 ```{r}
 
+# Set value and id columns
+value_cols = grep('TCGA-', names(df_wide), value = TRUE)
+
+# Melt
+df_long = gather(
+  df_wide,
+  key = 'SAMPLE',
+  value = 'EXISTS',
+  value_cols
+)
+
+# Clean up
+df_long = filter(df_long, EXISTS != 0)
+df_long = select(df_long, -EXISTS)
+
+print(dim(df_long))
+head(df_long)
 ```
 
 ## Free memory
 ```{r}
-
+rm(df_wide, df_long)
 ```
 
 # Counting 
 
 ## Count unique elements
 ```{r}
+n_genes = length(unique(df$GENE))
+n_samples = length(unique(df$SAMPLE))
+n_mutations = length(unique(df$MUTATION))
+n_mutation_classes = length(unique(df$CLASS))
 
+
+print('Number of unique')
+cat('\tSamples: ', n_samples, '\n')
+cat('\tGenes: ', n_genes, '\n')
+cat('\tMutations: ', n_mutations, '\n')
+cat('\tMutation Classes: ', n_mutation_classes, '\n')
 ```
 
 ## Count factor levels
 ```{r}
+class_counts = sort(summary(df$CLASS), decreasing = TRUE)
+impact_counts = sort(summary(df$IMPACT), decreasing = TRUE)
+type_counts = sort(summary(df$TYPE), decreasing = TRUE)
 
+print('Counts per CLASS:')
+print(class_counts)
+print('Counts per IMPACT:')
+print(impact_counts)
+print('Counts per TYPE:')
+print(type_counts)
+
+## Display some instances
+# Need to override the maxsum = 50 arg
+mut_counts =  sort(
+  summary(df$MUTATION, maxsum = n_mutations), 
+  decreasing = TRUE)
+print('Top repeated (>10) mutations:')
+print(mut_counts[mut_counts > 10])
+
+sample_counts =  sort(
+  summary(df$SAMPLE, maxsum = n_samples), 
+  decreasing = TRUE)
+print('Samples with most mutations:')
+print(sample_counts[0:10])
+print('Samples with least mutations:')
+print(tail(sample_counts, 10))
 ```
+
 
 ## Summarize by group
 ```{r}
@@ -195,15 +302,17 @@ df_summary = df %>%
   group_by(GENE) %>%
   summarise(
     N_MUTATIONS = n(),
-    N_UNIQUE_MUTATIONS = length(unique(MUTATION)),
-    SAMPLES = length(unique(BARCODE))
+    N_UNIQUE_MUTATIONS = n_distinct(MUTATION),
+    N_SAMPLES = n_distinct(BARCODE)
 )
+head(df_summary)
 ```
 
 ## Sorting
 ```{r}
 df_summary = df_summary %>%
-  arrange(desc(SAMPLES), N_MUTATIONS)
+  arrange(desc(N_SAMPLES), N_MUTATIONS)
+head(df_summary)
 ```
 
 
@@ -211,45 +320,114 @@ df_summary = df_summary %>%
 ```{r}
 df_impact = df %>%
   group_by(GENE, IMPACT) %>%
-  summarise(COUNT = length(unique(MUTATION)))
+  summarise(COUNT = n_distinct(MUTATION))
+
+print(dim(df_impact))
+head(df_impact)
 ```
 
 # Visualize
-
+Use cowplot for nice theme and subplotting
+https://cran.r-project.org/web/packages/cowplot/vignettes/introduction.html
 ```{r}
 img_dir = 'data/out/img/'
 ```
 
 
 ## Ranking
+NOTE: shape = '4' corresponds to X's
 ```{r}
+x = 0:(n_samples-1)
+y = unname(sample_counts)
+p = ggplot(mapping = aes(x, y)) +
+  geom_line() +
+  geom_point(shape = 4) +
+  ggtitle('Mutations per Individual') +
+  xlab('Individual Rank') +
+  ylab('Number of Mutations')
+ 
+
+p
+ggsave(paste0(img_dir, 'rank_r.png')) 
 
 ```
 
 ## Bar plot
 ```{r}
+p = ggplot(
+    mapping = aes(names(class_counts), unname(class_counts))
+  ) +
+  geom_bar(stat = 'identity') +
+  scale_x_discrete(limits = rev(names(class_counts))) +
+  coord_flip()
+
+p
+ggsave(paste0(img_dir, 'bar_r.png'))
 
 ```
 
 ## Subplots
 ```{r}
 
+## First plot
+# Reuse instance from above
+p1 = p
+
+## Second plot
+n_genes_to_plot = 5
+genes = df_summary$GENE[0:n_genes_to_plot]
+counts = df_summary$N_SAMPLES[0:n_genes_to_plot]
+p2 = ggplot(mapping = aes(genes, counts)) +
+  geom_bar(stat = 'identity') +
+  scale_x_discrete(limits = genes)
+  
+p_grid = plot_grid(p1, p2, ncol = 2)
+save_plot(paste0(img_dir, 'subplot_r.png'), p_grid, ncol = 2)
 ```
 
 ## Count vs identity
 ```{r}
+df_identity = df_summary %>%
+  arrange(-N_MUTATIONS)
+df_count = df
 
+# Plot params
+n_genes_to_plot = 5
+genes = df_identity$GENE[0:n_genes_to_plot]
+counts = df_identity$N_MUTATIONS[0:n_genes_to_plot]
+
+# Identity plot
+p1 = ggplot(mapping = aes(genes, counts)) +
+  geom_bar(stat = 'identity') + 
+  scale_x_discrete(limits = genes) +
+  ggtitle('# Mutations - Identity')
+
+# Count plot
+p2 = ggplot(df, aes(GENE)) +
+  geom_bar() +
+  scale_x_discrete(limits = genes) + 
+  ggtitle('# Mutations - Count')
+
+p_grid = plot_grid(p1, p2, ncol = 2)
+save_plot(paste0(img_dir, 'count_vs_identity_r.png'), p_grid, ncol = 2)
+p_grid
 ```
 
 
 ## Plot with grouping
 ```{r}
-## Filter to plotting data
-genes = df_summary$GENE[1:10]
+
+## Plot params
+n_genes_to_plot = 5
+genes = df_summary$GENE[0:n_genes_to_plot]
+
+## Filter to relvant data
 df_plt = df_impact %>%
   filter(GENE %in% genes)
 
 ## Reorder for plot
+# This is an alternative to 
+# scale_x_discrete(limits=genes)
 df_plt$GENE = factor(df_plt$GENE, levels = genes)
 
 p = ggplot(data = df_plt) +
@@ -261,16 +439,40 @@ p = ggplot(data = df_plt) +
   scale_fill_brewer(
     type='qual',
     palette = 'Set1'
-  )
+  ) +
+  ggtitle('Impact of Mutations')
 p
+ggsave(paste0(img_dir, 'group_r.png'), p)
 ```
 
 ## Faceted plot
 ```{r}
 
+## Get some samples and genes
+samples = names(sample_counts[0:2])
+genes = c('PIK3CA', 'TTN', 'MUC16')
+
+## Filter to relevant data
+df_plt = df %>%
+  filter(SAMPLE %in% samples & GENE %in% genes)
+
+## Reorder
+df_plt$GENE = factor(df_plt$GENE, levels = genes)
+df_plt$SAMPLE = factor(df_plt$SAMPLE, levels = samples)
+
+## Plot
+p = ggplot(df_plt) +
+  geom_bar(
+    aes(x=GENE, fill=IMPACT),
+    position = 'dodge'
+  ) + 
+  scale_fill_brewer(
+    type='qual',
+    palette = 'Set1'
+  ) +
+  facet_wrap('SAMPLE')
+
+p
+ggsave(paste0(img_dir, 'facet_r.png'), p)
 ```
 
-## Saving
-```{r}
-
-```
