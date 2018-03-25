@@ -152,6 +152,33 @@ print(dim(df_mut))
 head(df_mut)
 ```
 
+## New columns from delimited column
+```{r}
+
+## Create dummy frame
+df_tmp = df
+drop_cols = c(
+    'CHR',
+    'GENE',
+    'START',
+    'END',
+    'REF',
+    'ALT'
+)
+df_tmp = select(df_tmp, -one_of(drop_cols))
+
+## Create new columns
+df_tmp = separate(
+  df_tmp,
+  MUTATION,
+  drop_cols,
+  ':'
+)
+
+print(dim(df_tmp))
+head(df_tmp)
+```
+
 ## Writing files
 ```{r}
 write_delim(
@@ -181,16 +208,18 @@ df = readRDS(rds_path)
 # Note, we could include other columns here
 # like GENE and IMPACT, but we won't 
 # to match the python example.
+
+## Create a dummy column w/ fill value
 df_tmp = select(df, c('SAMPLE', 'MUTATION'))
 df_tmp$EXISTS = 1
 
+## Long-to-wide
 df_wide = spread(
   df_tmp,
   key = 'SAMPLE',
   value = 'EXISTS',
   fill = 0
 )
-
 rm(df_tmp)
 
 print(dim(df_wide))
@@ -198,7 +227,7 @@ head(df_wide)
 
 ```
 
-## Add info from 1 df to another (merge)
+## Merge
 ```{r}
 
 ## Select columns to add on and col to join on
@@ -265,7 +294,7 @@ cat('\tMutations: ', n_mutations, '\n')
 cat('\tMutation Classes: ', n_mutation_classes, '\n')
 ```
 
-## Count factor levels
+## Count by factor levels
 ```{r}
 class_counts = sort(summary(df$CLASS), decreasing = TRUE)
 impact_counts = sort(summary(df$IMPACT), decreasing = TRUE)
@@ -326,7 +355,7 @@ print(dim(df_impact))
 head(df_impact)
 ```
 
-# Visualize
+# Visualizations
 Use cowplot for nice theme and subplotting
 https://cran.r-project.org/web/packages/cowplot/vignettes/introduction.html
 ```{r}
@@ -339,6 +368,7 @@ NOTE: shape = '4' corresponds to X's
 ```{r}
 x = 0:(n_samples-1)
 y = unname(sample_counts)
+
 p = ggplot(mapping = aes(x, y)) +
   geom_line() +
   geom_point(shape = 4) +
@@ -387,22 +417,24 @@ save_plot(paste0(img_dir, 'subplot_r.png'), p_grid, ncol = 2)
 
 ## Count vs identity
 ```{r}
+
+## New df's for plotting
 df_identity = df_summary %>%
   arrange(-N_MUTATIONS)
 df_count = df
 
-# Plot params
+## Plot params
 n_genes_to_plot = 5
 genes = df_identity$GENE[0:n_genes_to_plot]
 counts = df_identity$N_MUTATIONS[0:n_genes_to_plot]
 
-# Identity plot
+## Identity plot
 p1 = ggplot(mapping = aes(genes, counts)) +
   geom_bar(stat = 'identity') + 
   scale_x_discrete(limits = genes) +
   ggtitle('# Mutations - Identity')
 
-# Count plot
+## Count plot
 p2 = ggplot(df, aes(GENE)) +
   geom_bar() +
   scale_x_discrete(limits = genes) + 
