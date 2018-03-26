@@ -126,7 +126,7 @@ df$MUTATION = paste(
   df$ALT,
   sep = ':'
 )
-df$TYPE2 = ifelse(df$TYPE2 == 'SNP', 'SNP', 'INDEL')
+df$TYPE2 = ifelse(df$TYPE == 'SNP', 'SNP', 'INDEL')
 
 ## New columns with mutate()
 # Equivalent to above (and thus redundant)
@@ -410,7 +410,7 @@ df_sample_stats
 Use cowplot for nice theme and subplotting
 https://cran.r-project.org/web/packages/cowplot/vignettes/introduction.html
 ```{r}
-img_dir = 'data/out/img/'
+img_dir = 'img/'
 ```
 
 
@@ -464,6 +464,8 @@ p2 = ggplot(mapping = aes(genes, counts)) +
   
 p_grid = plot_grid(p1, p2, ncol = 2)
 save_plot(paste0(img_dir, 'subplot_r.png'), p_grid, ncol = 2)
+
+p_grid
 ```
 
 ## Count vs identity
@@ -524,6 +526,7 @@ p = ggplot(data = df_plt) +
     palette = 'Set1'
   ) +
   ggtitle('Impact of Mutations')
+
 p
 ggsave(paste0(img_dir, 'group_r.png'), p)
 ```
@@ -583,13 +586,3 @@ p = ggplot(df_sample_counts, aes(TYPE2, N_MUTATIONS, fill = IMPACT)) +
 p
 ggsave(paste0(img_dir, 'box_group_r.png'), p)
 ```
-
-
-## Quantile summaries
-
-## Summaries with custom functions
-```{r}
-df_tmp = df %>%
-  mutate(TYPE2 = ifelse(TYPE == 'SNP', 'SNP', 'INDEL'))
-```
-
