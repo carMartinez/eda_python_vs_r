@@ -1,6 +1,6 @@
 ---
 title: "Exploring TCGA"
-output: html_notebook
+output: github_document
 ---
 
 ## Load dependencies
@@ -426,7 +426,6 @@ p = ggplot(mapping = aes(x, y)) +
   ggtitle('Mutations per Individual') +
   xlab('Individual Rank') +
   ylab('Number of Mutations')
- 
 
 p
 ggsave(paste0(img_dir, 'rank_r.png')) 
