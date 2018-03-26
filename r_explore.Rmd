@@ -21,7 +21,7 @@ in_path_mutect = 'data/maf/995c0111-d90b-4140-bee7-3845436c3b42/TCGA.BRCA.mutect
 ```
 
 ## Reading data
-```{r}
+```{r eval=FALSE}
 df = read_tsv(
   in_path_mutect,
   comment = '#'
@@ -114,6 +114,8 @@ df$GENE[is.na(df$GENE)] = 'INTERGENIC'
 
 ## Create new columns from string ops
 ```{r}
+
+## New columns by assignment
 df$SAMPLE = str_sub(df$BARCODE, 1, 12)
 df$MUTATION = paste(
   df$CHR, 
@@ -124,10 +126,33 @@ df$MUTATION = paste(
   df$ALT,
   sep = ':'
 )
+df$TYPE2 = ifelse(df$TYPE2 == 'SNP', 'SNP', 'INDEL')
 
-## Convert new columns to factors if applicable
+## New columns with mutate()
+# Equivalent to above (and thus redundant)
+df = mutate(
+  df,
+  SAMPLE = str_sub(BARCODE, 1, 12),
+  MUTATION = paste(
+    CHR,
+    GENE,
+    START,
+    END,
+    REF,
+    ALT,
+    sep = ':'
+  ),
+  TYPE2 = ifelse(TYPE == 'SNP', 'SNP', 'INDEL')
+)
+
+## Convert new columns to factors if applicable,
+## possibly with manually-set levels
 df$SAMPLE = as.factor(df$SAMPLE)
 df$MUTATION = as.factor(df$MUTATION)
+df$TYPE2 = factor(df$TYPE2, levels = c('SNP', 'INDEL'))
+
+print(dim(df))
+head(df)
 ```
 
 ## Remove duplicates
@@ -355,6 +380,32 @@ print(dim(df_impact))
 head(df_impact)
 ```
 
+## Descriptive statistics
+```{r}
+
+## Make counts per group
+df_sample_counts = df %>%
+  group_by(SAMPLE, TYPE2, IMPACT) %>%
+  summarize(N_MUTATIONS = n()) %>%
+  filter(N_MUTATIONS >= 20, N_MUTATIONS <= 200)
+
+## Calculate stats
+df_sample_stats = df_sample_counts %>%
+  group_by(TYPE2, IMPACT) %>%
+  summarize(
+    MEDIAN = median(N_MUTATIONS),
+    UPPER = quantile(N_MUTATIONS, .75),
+    LOWER = quantile(N_MUTATIONS, .25),
+    MEAN = mean(N_MUTATIONS),
+    STD = sd(N_MUTATIONS),
+    MIN = min(N_MUTATIONS),
+    MAX = max(N_MUTATIONS)
+  )
+
+head(df_sample_counts)
+df_sample_stats
+```
+
 # Visualizations
 Use cowplot for nice theme and subplotting
 https://cran.r-project.org/web/packages/cowplot/vignettes/introduction.html
@@ -506,5 +557,39 @@ p = ggplot(df_plt) +
 
 p
 ggsave(paste0(img_dir, 'facet_r.png'), p)
+```
+
+
+
+## Box plot
+```{r}
+
+## Set order
+df_sample_counts$TYPE2 = factor(df_sample_counts$TYPE2, levels = c('INDEL', 'SNP'))
+df_sample_counts$IMPACT = factor(df_sample_counts$IMPACT, levels = c(
+  'HIGH', 'MODERATE', 'LOW', 'MODIFIER'))
+
+## Box plot
+p = ggplot(df_sample_counts, aes(TYPE2, N_MUTATIONS, fill = IMPACT)) +
+  geom_boxplot() +
+  coord_flip() +
+  scale_fill_brewer(
+    type='qual',
+    palette = 'Set1'
+  ) +
+  ggtitle('Mutations Per Sample') +
+  xlab('Type')
+
+p
+ggsave(paste0(img_dir, 'box_group_r.png'), p)
+```
+
+
+## Quantile summaries
+
+## Summaries with custom functions
+```{r}
+df_tmp = df %>%
+  mutate(TYPE2 = ifelse(TYPE == 'SNP', 'SNP', 'INDEL'))
 ```
 
